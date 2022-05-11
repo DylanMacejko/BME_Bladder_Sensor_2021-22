@@ -1,17 +1,14 @@
 #include <Wire.h>
 #include "AD5933.h"
-#define START_FREQ (30000)//changed from 80k    //originally 30000
-#define FREQ_INCR (1000)                            //originally 1000
-#define NUM_INCR (40)                           //originally 40
+#define START_FREQ (30000)  //changed from 80k, 30k deemed optimal target impedance range
+#define FREQ_INCR (1000)    //increases used primarily for two point calibration              
+#define NUM_INCR (40)
 
-double gain[NUM_INCR+1];
+double gain[NUM_INCR+1];  //stores the calibrated gain across all frequencies
 int phase[NUM_INCR+1];
 
-int gaintest;
-int magtest;
-double midgain;
-
-
+//used by previous team member for data translation
+//not used by 2021-2022 team member
 union {
   byte array[8];
   double bigNum;
@@ -20,53 +17,13 @@ union {
 void setup(void)
 {
   
-  // Begin I2C
+  // Begin I2C, sets appropriate bluetooth signal
   Serial.begin(115200);
-  long REF_RESIST=(long)2220;
-  Wire.begin();
+  long REF_RESIST=(long)2220;   //IMPORTANT: CALIBRATION RESISTANCE SET HERE
+  Wire.begin();               //Establish connection with impedance analyzer
   
   // Perform initial configuration. Fail if any one of these fail.
-  /*
-  if(!AD5933::reset()){
-    while(1)
-      Serial.write("Reset fails");
-  }
-
-  while(1){
-    Serial.write("Made it to the end of reset checks\n");
-  }
-  if(!AD5933::setInternalClock(true)){
-    while(1)
-      Serial.write("Internal Clock fails");
-  }
-  if(!AD5933::setStartFrequency(START_FREQ)){
-    while(1)
-      Serial.write("Start Frequency fails");
-  }
-  if(!AD5933::setIncrementFrequency(FREQ_INCR)){
-    while(1)
-      Serial.write("Increment Frequency fails");
-  }
-  if(!AD5933::setNumberIncrements(NUM_INCR)){
-    while(1)
-      Serial.write("Number Increments fails");
-  }
-
-  if(!AD5933::setPGAGain(PGA_GAIN_X1)){
-    while(1)
-      Serial.write("PGA Gain fails");
-  }
-
-  while(1){
-    Serial.write("Made it to the end of six checks\n");
-  }
-
-  */
-  /*
-  while(1){
-    Serial.write("Capable of talking\n");
-  }
-  */
+  
   if (!(AD5933::reset() &&
   AD5933::setInternalClock(true) &&
   AD5933::setStartFrequency(START_FREQ) &&
@@ -75,16 +32,11 @@ void setup(void)
   AD5933::setPGAGain(PGA_GAIN_X1)))
   {
   while (true){
-     Serial.write("Failed attempt");
+     Serial.print("Failed startup. Unpower and repower arduino.");
   }
   
   }
   
-/*
-  while(1){
-    Serial.write("Made it to the end of setup\n");
-    }
-    */
 // Perform calibration sweep
     if (AD5933::calibrate(gain, phase, REF_RESIST, NUM_INCR+1)){
     }
@@ -97,53 +49,42 @@ void setup(void)
     
 void loop(void)
 {
-  //Serial.write("Ran frequency sweep/n");
   frequencySweepRaw();
-  
-  // Delay
-  delay(200); //safe to decrease?
+  delay(200); //can be decreased or increased as necessary
+              //too fast and the results will report to the screen and become illegible
+              //too slow, recording data points would take forever
+              //value up for deliberation
 }
 
 void frequencySweepRaw() {
   // Create variables to hold the impedance data and track frequency
-  //while(1){
-  //  Serial.write("Got to one");
-  //}
-  //Serial.write("Hello/n");
   
   int real, imag, i = 0, cfreq = START_FREQ/1000;
   double impedance;
+  
   // Initialize the frequency sweep
   if (!(AD5933::setPowerMode(POWER_STANDBY) && // place in standby
   AD5933::setControlMode(CTRL_INIT_START_FREQ) && // init start freq
   AD5933::setControlMode(CTRL_START_FREQ_SWEEP))) // begin frequency sweep
   {
   }
-  //Serial.write("Got to two");
+
   // Perform the actual sweep
-while ((AD5933::readStatusRegister() & STATUS_SWEEP_DONE) !=
-STATUS_SWEEP_DONE) {
+  while ((AD5933::readStatusRegister() & STATUS_SWEEP_DONE) !=
+  STATUS_SWEEP_DONE) {
 
   // Get the frequency data for this frequency point
-  if (!AD5933::getComplexData(&real, &imag)) {
+    if (!AD5933::getComplexData(&real, &imag)) {
+    }
   }
-
-  bool calib = true;
-  double magtesting;
-  double gaintesting;
-  while(calib){
-    double magtesting = sqrt(pow(real, 2) + pow(imag, 2));
-    double gaintesting = 1/(1000*magtesting);
-    calib = false;
-  }
-  
   
   // Compute impedance
   double magnitude = sqrt(pow(real, 2) + pow(imag, 2));
-  if(i==0){
+  if(i==0){   //only focusing on one point calibration here
+              //analyze more than i==0 for more frequencies
     
-    //Serial.print("Magnitude: ");
-    //Serial.print(magnitude);
+    //Serial.print("Magnitude: ");      <--- commented out lines useful for debugging
+    //Serial.print(magnitude);          <--- easy to detect null magnitudes or extreme gain
     //Serial.print("\n");
     //Serial.print("Gain Factor: ");
     //Serial.print(gain[i],16);
@@ -151,25 +92,24 @@ STATUS_SWEEP_DONE) {
     Serial.print("Impedance: ");
     Serial.print(1/(magnitude*gain[i]));
     Serial.print("\n");
-    
-    /*
-    Serial.print("Impedance with our gain: ");
-    Serial.print(1/(magtesting*gaintesting));
-    Serial.print("\n");
-    //delay();
-    */
+
+    //Serial.print is helpful function to relay to onSerialReceived in Android Studio
   }
   
   impedance = 1/(magnitude*gain[i]);
   // Increment the frequency
-  i++;
+  i++;  //irrelevant when doing one frequency point
+        //more tests needed to determine if two point is better
   cfreq += FREQ_INCR/1000;
   AD5933::setControlMode(CTRL_INCREMENT_FREQ);
   
 
 }
 
-//Serial.write("Got to three");
+//previous team member attempt at sending impedance data
+//determined best to send as a string for manual analysis
+//computational analysis for further improvement may require integer type
+
 /*
 myUnion.bigNum = impedance;
 for (int i = 0; i < sizeof(double); i++) {
